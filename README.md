@@ -1,10 +1,10 @@
 - 👋 Hi, I’m @Astro1ym
-- 👀 I’m interested in ... Skibidy toiley
+- 👀 I’m interested in ... MUSIC PRODUCTION
 - 🌱 I’m currently learning ... c++
-- 💞️ I’m looking to collaborate on ...
+- 💞️ I’m looking to collaborate on ... NOTHING
 - 📫 How to reach me ... dont
-- 😄 Pronouns: ... sigma/mewing god
-- ⚡ Fun fact: ... im so good at mewing i cant talk lol. thats a lie.
+- 😄 Pronouns: ... he/him
+- ⚡ Fun fact: ... I CAN OPERATE 4 DIFFERENT DAW's
 
 <!---
 Astro1ym/Astro1ym is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
