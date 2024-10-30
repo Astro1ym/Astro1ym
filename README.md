@@ -3,8 +3,8 @@
 - 🌱 I’m currently learning ... c++
 - 💞️ I’m looking to collaborate on ... NOTHING
 - 📫 How to reach me ... dont
-- 😄 Pronouns: ... he/him
-- ⚡ Fun fact: ... I CAN OPERATE 4 DIFFERENT DAW's
+- 😄 Pronouns: ... as/tro
+- ⚡ Fun fact: ... dont email me or call me or txt me cause il prolly ignore it
 
 <!---
 Astro1ym/Astro1ym is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
