@@ -1,0 +1,664 @@
+<title>Night Deposit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: a heist blueprint on a drafting table. HUD strip above, plan below, touch pad under it on phones. */
+  :root {
+    --ink: #0a1830;        /* blueprint paper */
+    --ink-2: #102444;      /* room fill */
+    --line: #1f3d66;       /* grid */
+    --chalk: #dbe8f5;      /* walls, text */
+    --dim: #8aa3c2;        /* secondary text */
+    --cyan: #6fc3ff;       /* player, info */
+    --amber: #ffb547;      /* guards */
+    --alarm: #ff5d63;      /* cameras, lasers, danger */
+    --gold: #f2d36b;       /* loot */
+    --display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ink);
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: -1px -1px;
+    color: var(--chalk);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding-inline: 16px;
+    padding-block: 18px 28px;
+    box-sizing: border-box;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; }
+  h1 {
+    font-family: var(--display); font-weight: 700; font-size: clamp(26px, 5vw, 40px);
+    margin: 0; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1;
+  }
+  h1 small { display: block; font-family: var(--mono); font-weight: 400; font-size: 12px; letter-spacing: 0.12em; color: var(--dim); margin-top: 6px; }
+  .hud { display: flex; flex-wrap: wrap; gap: 6px 18px; font-variant-numeric: tabular-nums; }
+  .stat { display: flex; flex-direction: column; gap: 2px; min-width: 64px; }
+  .stat b { font-size: 10px; letter-spacing: 0.14em; color: var(--dim); font-weight: 400; text-transform: uppercase; }
+  .stat span { font-family: var(--display); font-size: 18px; font-weight: 500; }
+  #loot { color: var(--gold); }
+  .on { color: var(--cyan); }
+  .meter { width: 120px; height: 8px; border: 1px solid var(--dim); margin-top: 7px; position: relative; }
+  .meter i { position: absolute; inset: 0 auto 0 0; width: 0%; background: var(--amber); }
+  .meter.hot i { background: var(--alarm); }
+  .stage { position: relative; border: 1px solid var(--chalk); background: var(--ink); box-shadow: 6px 6px 0 rgba(0,0,0,0.35); }
+  canvas#game { display: block; width: 100%; height: auto; image-rendering: auto; }
+  .toast {
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    background: var(--ink); border: 1px solid var(--cyan); color: var(--chalk);
+    padding: 6px 12px; font-size: 13px; max-width: calc(100% - 24px); text-align: center;
+    transition: opacity .25s; pointer-events: none;
+  }
+  .toast.warn { border-color: var(--alarm); }
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 14, 28, 0.86); padding: 16px; box-sizing: border-box; overflow: auto;
+  }
+  .card { max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
+  .card h2 { font-family: var(--display); font-size: clamp(22px, 4vw, 32px); margin: 0; text-transform: uppercase; letter-spacing: 0.05em; text-wrap: balance; }
+  .card p { margin: 0; line-height: 1.55; color: var(--dim); }
+  .card ol { margin: 0; padding-left: 22px; line-height: 1.6; }
+  .card ol li::marker { color: var(--amber); font-family: var(--display); }
+  .keys { font-size: 12px; color: var(--dim); line-height: 1.6; }
+  kbd { font-family: var(--mono); border: 1px solid var(--dim); padding: 0 5px; color: var(--chalk); font-size: 11px; }
+  button {
+    font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--amber); color: var(--ink); border: 0; padding: 10px 18px; cursor: pointer; align-self: flex-start;
+  }
+  button.ghost { background: transparent; color: var(--chalk); border: 1px solid var(--dim); }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+  .tally { font-variant-numeric: tabular-nums; display: grid; grid-template-columns: 1fr auto; gap: 4px 24px; }
+  .tally .big { font-family: var(--display); font-size: 28px; color: var(--gold); }
+  /* Safe cracking */
+  .safe { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: center; }
+  .safe canvas { width: 220px; height: 220px; max-width: 100%; touch-action: none; }
+  .safe .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; max-width: 260px; }
+  .combo { display: flex; gap: 8px; font-family: var(--display); font-size: 26px; font-variant-numeric: tabular-nums; }
+  .combo span { border-bottom: 2px solid var(--dim); min-width: 40px; text-align: center; }
+  .combo span.got { color: var(--gold); border-color: var(--gold); }
+  .leds { display: flex; gap: 4px; }
+  .leds i { width: 22px; height: 10px; border: 1px solid var(--dim); }
+  .leds i.lit { background: var(--amber); border-color: var(--amber); }
+  .leds i.lit.hit { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* Touch controls */
+  .pad { display: none; justify-content: space-between; align-items: center; gap: 16px; user-select: none; -webkit-user-select: none; }
+  @media (pointer: coarse) { .pad { display: flex; } .desk-keys { display: none; } }
+  .dpad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 4px; }
+  .dpad button, .act { padding: 0; touch-action: none; background: var(--ink-2); color: var(--chalk); border: 1px solid var(--dim); font-size: 20px; }
+  .dpad button:active, .act:active { background: var(--line); }
+  .act { width: 96px; height: 96px; border-radius: 50%; border-color: var(--amber); color: var(--amber); font-size: 15px; align-self: center; }
+  .foot { font-size: 12px; color: var(--dim); }
+  @media (max-width: 640px) { .overlay { position: fixed; z-index: 10; } }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Night Deposit<small>FIRST CONTINENTAL SAVINGS · BRANCH 029 · FLOOR PLAN REV. C</small></h1>
+    <div class="hud" aria-live="polite">
+      <div class="stat"><b>Take</b><span id="loot">$0</span></div>
+      <div class="stat"><b>Keycard</b><span id="card">—</span></div>
+      <div class="stat"><b>Power</b><span id="power">ON</span></div>
+      <div class="stat"><b>Clock</b><span id="clock">02:14:00</span></div>
+      <div class="stat"><b>Suspicion</b><div class="meter" id="meter"><i></i></div></div>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="game" width="960" height="640" aria-label="Bank floor plan"></canvas>
+    <div class="toast" id="toast" style="opacity:0"></div>
+
+    <div class="overlay" id="intro">
+      <div class="card">
+        <h2>The job at Branch 029</h2>
+        <p>Three guards on the night shift, cameras on a sweep, a laser curtain in the vault. Get in, get paid, get back to the van before anyone sounds the alarm.</p>
+        <ol>
+          <li>Lift the keycard from the manager's office.</li>
+          <li>Optional: cut the power in the security room. Cameras and lasers drop for 20 seconds, once.</li>
+          <li>Swipe into the vault and grab the cash bundles.</li>
+          <li>Crack the safe for the gold. Listen for the tumblers.</li>
+          <li>Walk out the front door you came in through.</li>
+        </ol>
+        <p class="keys desk-keys"><kbd>WASD</kbd>/<kbd>Arrows</kbd> move · <kbd>E</kbd>/<kbd>Space</kbd> interact · <kbd>Shift</kbd> tiptoe (smaller noise, slower) · <kbd>R</kbd> restart</p>
+        <p class="keys">Stay out of the amber guard cones and the red camera cones. Every bag you carry slows you down.</p>
+        <button id="startBtn">Start the job</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="safeUI" hidden>
+      <div class="card">
+        <h2>Safe · Mosler Class 5</h2>
+        <div class="safe">
+          <canvas id="dial" width="440" height="440" aria-label="Combination dial"></canvas>
+          <div class="side">
+            <div class="combo" id="combo"><span>__</span><span>__</span><span>__</span></div>
+            <div><div class="keys" style="margin-bottom:4px">Tumbler contact</div><div class="leds" id="leds"><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            <p class="keys desk-keys"><kbd>←</kbd><kbd>→</kbd> turn · <kbd>Shift</kbd> one notch · <kbd>Space</kbd> set number · <kbd>Esc</kbd> step away</p>
+            <p class="keys">All six lights means the tumbler is seated. A wrong set clanks, and the guards hear it. Three misses trips the alarm.</p>
+            <div class="row">
+              <button class="ghost" id="dL" aria-label="Turn left">◀</button>
+              <button class="ghost" id="dR" aria-label="Turn right">▶</button>
+              <button id="dSet">Set</button>
+              <button class="ghost" id="dLeave">Step away</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="endUI" hidden>
+      <div class="card">
+        <h2 id="endTitle"></h2>
+        <p id="endText"></p>
+        <div class="tally" id="tally"></div>
+        <button id="againBtn">Run it again</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pad" id="pad">
+    <div class="dpad">
+      <span></span><button data-k="up" aria-label="Up">▲</button><span></span>
+      <button data-k="left" aria-label="Left">◀</button><button data-k="sneak" aria-label="Tiptoe" style="font-size:11px">TIP</button><button data-k="right" aria-label="Right">▶</button>
+      <span></span><button data-k="down" aria-label="Down">▼</button><span></span>
+    </div>
+    <button class="act" id="actBtn">Use</button>
+  </div>
+  <p class="foot">Legend: <span style="color:var(--cyan)">●</span> you · <span style="color:var(--amber)">●</span> guard · <span style="color:var(--alarm)">◆</span> camera · <span style="color:var(--gold)">■</span> loot · K keycard · P power panel · V safe</p>
+</div>
+
+<script>
+(() => {
+  const MAP = [
+    "##############################",
+    "#K.....#..............#.....P#",
+    "#......#..............#......#",
+    "#..TT..#....T....T....#..TT..#",
+    "#......#..............#......#",
+    "#......#..............#......#",
+    "###.####..............####.###",
+    "#............................#",
+    "#....TTTTT......TTTTT........#",
+    "#............................#",
+    "#............................#",
+    "#............................#",
+    "####.############L############",
+    "#......#........#....$....$..#",
+    "#......#........#............#",
+    "#......#........#.......V..$.#",
+    "#...............#............#",
+    "#......#........#....$....$..#",
+    "#......#$.......##############",
+    "####S#########################",
+  ];
+  const W = 30, H = 20, TS = 32;
+  const LASER_X = 19, LASER_Y0 = 13, LASER_Y1 = 17;
+  const C = { ink:"#0a1830", ink2:"#102444", line:"#1f3d66", chalk:"#dbe8f5", dim:"#8aa3c2", cyan:"#6fc3ff", amber:"#ffb547", alarm:"#ff5d63", gold:"#f2d36b" };
+  const LABELS = [["MANAGER", 3.5, 5.3], ["STAFF ATRIUM", 15, 4.6], ["SECURITY", 25.5, 5.3], ["TELLER HALL", 15, 10.3], ["LOBBY", 3.5, 14.2], ["COUNT ROOM", 12, 15.3], ["VAULT", 22.5, 16.5]];
+
+  const cv = document.getElementById("game"), ctx = cv.getContext("2d");
+  const $ = id => document.getElementById(id);
+  let S; // game state
+  const keys = new Set();
+
+  function newGame() {
+    S = {
+      tiles: MAP.map(r => r.split("")),
+      p: { x: 4.5, y: 18.4, ang: -Math.PI / 2 },
+      loot: 0, bags: 0, gold: false, card: false,
+      powerCut: 0, powerUsed: false,
+      sus: 0, maxSus: 0, t: 0, misses: 0,
+      running: false, over: false, safeOpen: false,
+      guards: [
+        mkGuard([[2.5, 7.5], [27.5, 7.5], [27.5, 11.5], [2.5, 11.5]], 1.7),
+        mkGuard([[9.5, 1.5], [20.5, 1.5], [20.5, 5.5], [9.5, 5.5]], 1.4),
+        mkGuard([[9.5, 13.5], [14.5, 13.5], [14.5, 17.5], [9.5, 17.5]], 1.2),
+      ],
+      cams: [
+        { x: 1.05, y: 7.05, base: Math.PI / 4, sweep: 0.75, spd: 0.55, ph: 0, range: 7 },
+        { x: 21.95, y: 11.95, base: -2.4, sweep: 0.7, spd: 0.7, ph: 1.4, range: 7 },
+        { x: 28.95, y: 13.05, base: 2.65, sweep: 0.45, spd: 0.5, ph: 2.2, range: 10 },
+      ],
+      safe: { combo: [rnd(), rnd(), rnd()], stage: 0, val: 0 },
+    };
+    S.guards[1].i = 2; S.guards[1].x = 20.5; S.guards[1].y = 5.5;
+    S.guards[0].i = 1; S.guards[0].x = 14; S.guards[0].y = 7.5;
+  }
+  const rnd = () => 5 + Math.floor(Math.random() * 90);
+  function mkGuard(path, spd) {
+    return { path, i: 1, x: path[0][0], y: path[0][1], ang: 0, spd, wait: 0, sees: 0, lost: 0 };
+  }
+
+  // ---------- map helpers ----------
+  const tile = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? "#" : S.tiles[y][x];
+  const solid = (x, y) => "#TLPVv".includes(tile(x, y));
+  const opaque = (x, y) => "#TL".includes(tile(x, y));
+  function blocked(x, y, r = 0.3) {
+    for (const [dx, dy] of [[-r, -r], [r, -r], [-r, r], [r, r]])
+      if (solid(Math.floor(x + dx), Math.floor(y + dy))) return true;
+    return false;
+  }
+  function rayLen(ox, oy, a, range) {
+    const cx = Math.cos(a), cy = Math.sin(a);
+    for (let d = 0; d < range; d += 0.06) if (opaque(Math.floor(ox + cx * d), Math.floor(oy + cy * d))) return d;
+    return range;
+  }
+  const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  function sees(ox, oy, a, fov, range, px, py) {
+    const dx = px - ox, dy = py - oy, d = Math.hypot(dx, dy);
+    if (d > range) return 0;
+    const ta = Math.atan2(dy, dx);
+    if (Math.abs(angDiff(ta, a)) > fov / 2) return 0;
+    if (rayLen(ox, oy, ta, d) < d - 0.05) return 0;
+    return 1 - d / range;
+  }
+  const camAngle = c => c.base + Math.sin(S.t * c.spd + c.ph) * c.sweep;
+  const laserOn = () => S.powerCut <= 0 && (S.t % 3.4) < 2.2;
+
+  // ---------- audio ----------
+  let ac;
+  function beep(f = 600, dur = 0.05, type = "square", vol = 0.04) {
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.value = f; g.gain.value = vol;
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+      o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur);
+    } catch (e) {}
+  }
+
+  // ---------- toast ----------
+  let toastT;
+  function toast(msg, warn) {
+    const el = $("toast"); el.textContent = msg; el.className = "toast" + (warn ? " warn" : ""); el.style.opacity = 1;
+    clearTimeout(toastT); toastT = setTimeout(() => el.style.opacity = 0, 2400);
+  }
+
+  // ---------- interaction ----------
+  function nearby(ch) {
+    const { x, y } = S.p;
+    for (let ty = Math.floor(y - 1.2); ty <= Math.floor(y + 1.2); ty++)
+      for (let tx = Math.floor(x - 1.2); tx <= Math.floor(x + 1.2); tx++)
+        if (tile(tx, ty) === ch && Math.hypot(tx + 0.5 - x, ty + 0.5 - y) < 1.25) return [tx, ty];
+    return null;
+  }
+  function interact() {
+    if (!S.running || S.over) return;
+    let t;
+    if ((t = nearby("K"))) { S.tiles[t[1]][t[0]] = "."; S.card = true; beep(880, 0.08); toast("Keycard lifted. The vault reader takes it."); return; }
+    if ((t = nearby("P"))) {
+      if (S.powerUsed) { toast("The breaker is already blown.", true); return; }
+      S.powerUsed = true; S.powerCut = 20; beep(140, 0.4, "sawtooth", 0.06);
+      toast("Power cut. Cameras and lasers are dark for 20 seconds."); return;
+    }
+    if ((t = nearby("L"))) {
+      if (!S.card) { beep(200, 0.15); toast("Vault door is badge-locked. Find a keycard.", true); return; }
+      S.tiles[t[1]][t[0]] = "O"; beep(660, 0.06); setTimeout(() => beep(990, 0.08), 80);
+      toast("Badge accepted. Vault door open."); return;
+    }
+    if ((t = nearby("V"))) { openSafe(); return; }
+    if (nearby("v")) { toast("The safe is empty. You already have the gold."); return; }
+    toast("Nothing to use here.");
+  }
+
+  // ---------- safe cracking ----------
+  function openSafe() {
+    S.safeOpen = true; keys.clear(); $("safeUI").hidden = false; drawDial(); $("dSet").focus();
+  }
+  function closeSafe() { S.safeOpen = false; $("safeUI").hidden = true; cv.focus(); }
+  function turn(n) {
+    const s = S.safe; s.val = (s.val + n + 100) % 100;
+    const d = circDiff(s.val, s.combo[s.stage]);
+    beep(d === 0 ? 1400 : 300 + Math.max(0, 6 - d) * 120, 0.02, "triangle", d === 0 ? 0.06 : 0.02);
+    drawDial();
+  }
+  const circDiff = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 100 - d); };
+  function setNumber() {
+    const s = S.safe;
+    if (s.val === s.combo[s.stage]) {
+      s.stage++; beep(1200, 0.08); setTimeout(() => beep(1600, 0.08), 90);
+      if (s.stage === 3) {
+        S.tiles[15][24] = "v"; S.gold = true; S.loot += 250000; closeSafe();
+        toast("Safe open. 12 gold bars, about $250,000. Heavy, too.");
+      } else drawDial();
+    } else {
+      S.misses++; S.sus = Math.min(100, S.sus + 28); beep(90, 0.3, "sawtooth", 0.08);
+      toast(S.misses >= 3 ? "The dial jams with a bang." : `Clank. That carried. ${3 - S.misses} miss${S.misses === 2 ? "" : "es"} left.`, true);
+      if (S.misses >= 3) { closeSafe(); bust("The safe's relocker fired and the alarm went with it."); }
+      drawDial();
+    }
+  }
+  function drawDial() {
+    const d = $("dial"), g = d.getContext("2d"), s = S.safe, R = 200, cx = 220, cy = 220;
+    g.clearRect(0, 0, 440, 440);
+    g.fillStyle = C.ink2; g.strokeStyle = C.chalk; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.save(); g.translate(cx, cy); g.rotate(-s.val / 100 * Math.PI * 2);
+    for (let i = 0; i < 100; i++) {
+      const a = i / 100 * Math.PI * 2 - Math.PI / 2, big = i % 10 === 0, mid = i % 5 === 0;
+      const r0 = big ? R - 34 : mid ? R - 24 : R - 16;
+      g.strokeStyle = big ? C.chalk : C.dim; g.lineWidth = big ? 3 : 1.5;
+      g.beginPath(); g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * (R - 6), Math.sin(a) * (R - 6)); g.stroke();
+      if (big) {
+        g.save(); g.rotate(a + Math.PI / 2); g.fillStyle = C.chalk; g.font = "600 24px 'IBM Plex Mono', monospace";
+        g.textAlign = "center"; g.fillText(String(i), 0, -R + 62); g.restore();
+      }
+    }
+    g.restore();
+    g.fillStyle = C.ink; g.strokeStyle = C.dim; g.lineWidth = 2;
+    g.beginPath(); g.arc(cx, cy, 70, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = C.gold; g.font = "700 46px 'Chakra Petch', sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(String(s.val).padStart(2, "0"), cx, cy + 2);
+    g.fillStyle = C.amber; g.beginPath(); g.moveTo(cx, 30); g.lineTo(cx - 12, 4); g.lineTo(cx + 12, 4); g.closePath(); g.fill();
+
+    const spans = $("combo").children;
+    for (let i = 0; i < 3; i++) {
+      spans[i].textContent = i < s.stage ? String(s.combo[i]).padStart(2, "0") : "__";
+      spans[i].className = i < s.stage ? "got" : "";
+    }
+    const diff = s.stage < 3 ? circDiff(s.val, s.combo[s.stage]) : 99;
+    const lit = Math.max(0, 6 - Math.ceil(diff / 2));
+    [...$("leds").children].forEach((el, i) => { el.className = i < lit ? (diff === 0 ? "lit hit" : "lit") : ""; });
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    S.t += dt;
+    if (S.powerCut > 0) S.powerCut = Math.max(0, S.powerCut - dt);
+    const p = S.p;
+
+    if (!S.safeOpen) {
+      let vx = 0, vy = 0;
+      if (keys.has("left")) vx--; if (keys.has("right")) vx++;
+      if (keys.has("up")) vy--; if (keys.has("down")) vy++;
+      if (vx || vy) {
+        const len = Math.hypot(vx, vy); vx /= len; vy /= len;
+        const sneak = keys.has("sneak");
+        let spd = 3.3 * Math.max(0.55, 1 - S.bags * 0.05 - (S.gold ? 0.18 : 0)) * (sneak ? 0.5 : 1);
+        const nx = p.x + vx * spd * dt, ny = p.y + vy * spd * dt;
+        if (!blocked(nx, p.y)) p.x = nx;
+        if (!blocked(p.x, ny)) p.y = ny;
+        p.ang = Math.atan2(vy, vx);
+        p.moving = sneak ? 0.5 : 1;
+      } else p.moving = 0;
+    }
+
+    // pickups
+    const tx = Math.floor(p.x), ty = Math.floor(p.y);
+    if (tile(tx, ty) === "$") { S.tiles[ty][tx] = "."; S.bags++; S.loot += 40000; beep(1046, 0.06, "triangle", 0.05); toast(`Cash bundle, $40,000. Carrying ${S.bags} bag${S.bags > 1 ? "s" : ""}.`); }
+
+    // exit
+    if (tile(tx, ty) === "S" && p.y > 19.0) {
+      if (S.loot > 0) return win();
+      if (!S.exitNag) { toast("Leaving empty-handed? The crew would never let you live it down.", true); S.exitNag = true; }
+    } else S.exitNag = false;
+
+    // lasers
+    if (laserOn() && Math.abs(p.x - (LASER_X + 0.5)) < 0.36 && p.y > LASER_Y0 && p.y < LASER_Y1 + 1) return bust("You broke the laser curtain. The vault sealed itself.");
+
+    // watchers
+    let heat = 0;
+    for (const g of S.guards) {
+      const v = sees(g.x, g.y, g.ang, 1.25, 6.2, p.x, p.y);
+      // footsteps: guards hear you running close behind them
+      const near = Math.hypot(g.x - p.x, g.y - p.y);
+      const heard = p.moving === 1 && near < 1.8 && !v;
+      if (v > 0 || heard) {
+        g.sees = 1; g.lost = 1.6;
+        const want = Math.atan2(p.y - g.y, p.x - g.x);
+        g.ang += angDiff(want, g.ang) * Math.min(1, dt * (v > 0 ? 6 : 3));
+        heat += v > 0 ? (30 + 90 * v) * (p.moving === 0.5 ? 0.8 : 1) : 18;
+        continue;
+      }
+      if (g.lost > 0) { g.lost -= dt; g.sees = 0.5; continue; }
+      g.sees = 0;
+      if (g.wait > 0) { g.wait -= dt; g.ang += dt * 0.9 * (g.i % 2 ? 1 : -1); continue; }
+      const [wx, wy] = g.path[g.i];
+      const dx = wx - g.x, dy = wy - g.y, d = Math.hypot(dx, dy);
+      const want = Math.atan2(dy, dx);
+      g.ang += angDiff(want, g.ang) * Math.min(1, dt * 5);
+      if (d < 0.05) { g.i = (g.i + 1) % g.path.length; g.wait = 0.9; }
+      else { const st = Math.min(d, g.spd * dt); g.x += dx / d * st; g.y += dy / d * st; }
+    }
+    if (S.powerCut <= 0) for (const c of S.cams) { const v = sees(c.x, c.y, camAngle(c), 0.8, c.range, p.x, p.y); if (v > 0) heat += 45 + 60 * v; }
+
+    if (heat > 0) S.sus = Math.min(100, S.sus + heat * dt);
+    else S.sus = Math.max(0, S.sus - 9 * dt);
+    S.maxSus = Math.max(S.maxSus, S.sus);
+    if (heat > 0 && Math.floor(S.t * 6) !== Math.floor((S.t - dt) * 6)) beep(S.sus > 60 ? 880 : 520, 0.03, "square", 0.02);
+    if (S.sus >= 100) return bust("Somebody hit the silent alarm. Sirens in ninety seconds, and you're still inside.");
+  }
+
+  // ---------- draw ----------
+  function draw() {
+    ctx.fillStyle = C.ink; ctx.fillRect(0, 0, cv.width, cv.height);
+    // floor
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = S.tiles[y][x];
+      if (t !== "#") { ctx.fillStyle = C.ink2; ctx.fillRect(x * TS, y * TS, TS, TS); }
+    }
+    // grid
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = 0; x <= W; x++) { ctx.moveTo(x * TS + 0.5, 0); ctx.lineTo(x * TS + 0.5, H * TS); }
+    for (let y = 0; y <= H; y++) { ctx.moveTo(0, y * TS + 0.5); ctx.lineTo(W * TS, y * TS + 0.5); }
+    ctx.stroke();
+    // room labels
+    ctx.fillStyle = C.line; ctx.font = "600 13px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const [s, x, y] of LABELS) ctx.fillText(s, x * TS, y * TS);
+
+    // tiles
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = S.tiles[y][x], px = x * TS, py = y * TS;
+      if (t === "#") {
+        ctx.fillStyle = "#1a3358"; ctx.fillRect(px, py, TS, TS);
+        ctx.strokeStyle = C.chalk; ctx.lineWidth = 1.5;
+        // outline only edges facing floor
+        ctx.beginPath();
+        if (y > 0 && tile(x, y - 1) !== "#") { ctx.moveTo(px, py); ctx.lineTo(px + TS, py); }
+        if (y < H - 1 && tile(x, y + 1) !== "#") { ctx.moveTo(px, py + TS); ctx.lineTo(px + TS, py + TS); }
+        if (x > 0 && tile(x - 1, y) !== "#") { ctx.moveTo(px, py); ctx.lineTo(px, py + TS); }
+        if (x < W - 1 && tile(x + 1, y) !== "#") { ctx.moveTo(px + TS, py); ctx.lineTo(px + TS, py + TS); }
+        ctx.stroke();
+        // hatching
+        ctx.strokeStyle = "#24446f"; ctx.lineWidth = 1; ctx.beginPath();
+        ctx.moveTo(px, py + TS); ctx.lineTo(px + TS, py); ctx.stroke();
+      } else if (t === "T") {
+        ctx.fillStyle = "#24446f"; ctx.fillRect(px + 2, py + 6, TS - 4, TS - 12);
+        ctx.strokeStyle = C.dim; ctx.lineWidth = 1.5; ctx.strokeRect(px + 2.5, py + 6.5, TS - 5, TS - 13);
+      } else if (t === "K") {
+        const bob = Math.sin(S.t * 4) * 2;
+        ctx.fillStyle = C.cyan; ctx.fillRect(px + 9, py + 10 + bob, 14, 10);
+        ctx.fillStyle = C.ink; ctx.fillRect(px + 11, py + 12 + bob, 5, 2);
+        tag("K", px, py);
+      } else if (t === "P") {
+        ctx.fillStyle = S.powerUsed ? "#24446f" : C.ink; ctx.fillRect(px + 4, py + 2, TS - 8, TS - 4);
+        ctx.strokeStyle = S.powerUsed ? C.dim : C.amber; ctx.lineWidth = 2; ctx.strokeRect(px + 4, py + 2, TS - 8, TS - 4);
+        ctx.fillStyle = S.powerUsed ? C.dim : C.amber; ctx.font = "700 16px 'Chakra Petch', sans-serif"; ctx.fillText("⚡", px + TS / 2, py + TS / 2 + 1);
+      } else if (t === "L" || t === "O") {
+        ctx.fillStyle = t === "L" ? "#3a2a1a" : C.ink2; ctx.fillRect(px, py, TS, TS);
+        ctx.strokeStyle = t === "L" ? C.amber : C.dim; ctx.lineWidth = 3;
+        if (t === "L") ctx.strokeRect(px + 2, py + 2, TS - 4, TS - 4);
+        else { ctx.beginPath(); ctx.arc(px, py, TS, 0, Math.PI / 2); ctx.stroke(); }
+      } else if (t === "V" || t === "v") {
+        ctx.fillStyle = "#2a3a52"; ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2);
+        ctx.strokeStyle = t === "V" ? C.gold : C.dim; ctx.lineWidth = 2; ctx.strokeRect(px + 2, py + 2, TS - 4, TS - 4);
+        ctx.beginPath(); ctx.arc(px + TS / 2, py + TS / 2, 8, 0, Math.PI * 2); ctx.stroke();
+        if (t === "V") tag("V", px, py);
+      } else if (t === "$") {
+        ctx.fillStyle = C.gold; ctx.fillRect(px + 8, py + 9, 16, 14);
+        ctx.fillStyle = C.ink; ctx.font = "700 12px 'Chakra Petch', sans-serif"; ctx.fillText("$", px + 16, py + 16.5);
+      } else if (t === "S") {
+        ctx.fillStyle = "rgba(111,195,255,0.15)"; ctx.fillRect(px, py, TS, TS);
+        ctx.fillStyle = C.cyan; ctx.font = "600 10px 'IBM Plex Mono', monospace"; ctx.fillText("EXIT", px + TS / 2, py + TS / 2);
+      }
+    }
+
+    // laser curtain
+    if (S.powerCut <= 0) {
+      const on = laserOn(), x = (LASER_X + 0.5) * TS;
+      ctx.strokeStyle = on ? C.alarm : "rgba(255,93,99,0.18)"; ctx.lineWidth = on ? 2 : 1;
+      ctx.setLineDash(on ? [] : [4, 6]);
+      ctx.beginPath(); ctx.moveTo(x, LASER_Y0 * TS + 2); ctx.lineTo(x, (LASER_Y1 + 1) * TS - 2); ctx.stroke(); ctx.setLineDash([]);
+      if (on) { ctx.shadowColor = C.alarm; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0; }
+    }
+
+    // cones
+    for (const c of S.cams) if (S.powerCut <= 0) cone(c.x, c.y, camAngle(c), 0.8, c.range, "rgba(255,93,99,0.16)", "rgba(255,93,99,0.5)");
+    for (const g of S.guards) cone(g.x, g.y, g.ang, 1.25, 6.2, g.sees ? "rgba(255,93,99,0.2)" : "rgba(255,181,71,0.14)", g.sees ? "rgba(255,93,99,0.55)" : "rgba(255,181,71,0.45)");
+
+    // cameras
+    for (const c of S.cams) {
+      ctx.save(); ctx.translate(c.x * TS, c.y * TS); ctx.rotate(camAngle(c));
+      ctx.fillStyle = S.powerCut > 0 ? C.dim : C.alarm; ctx.fillRect(-4, -5, 14, 10);
+      ctx.restore();
+    }
+    // guards
+    for (const g of S.guards) {
+      const gx = g.x * TS, gy = g.y * TS;
+      ctx.fillStyle = C.amber; ctx.beginPath(); ctx.arc(gx, gy, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + Math.cos(g.ang) * 10, gy + Math.sin(g.ang) * 10); ctx.stroke();
+      if (g.sees) { ctx.fillStyle = g.sees === 1 ? C.alarm : C.amber; ctx.font = "700 18px 'Chakra Petch', sans-serif"; ctx.fillText(g.sees === 1 && S.sus > 50 ? "!" : "?", gx, gy - 20); }
+    }
+    // player
+    const p = S.p, px = p.x * TS, py = p.y * TS;
+    ctx.fillStyle = C.cyan; ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.ink; ctx.fillRect(px - 6, py - 3, 12, 4); // balaclava slit
+    if (S.bags || S.gold) { ctx.fillStyle = C.gold; ctx.fillRect(px - Math.cos(p.ang) * 12 - 4, py - Math.sin(p.ang) * 12 - 4, 8, 8); }
+
+    // power cut tint
+    if (S.powerCut > 0) { ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(0, 0, cv.width, cv.height); }
+
+    // interact prompt
+    if (S.running && !S.over && !S.safeOpen) {
+      const hint = nearby("K") ? "E · take keycard" : nearby("P") && !S.powerUsed ? "E · cut power" : nearby("L") ? (S.card ? "E · swipe keycard" : "Locked: needs keycard") : nearby("V") ? "E · crack safe" : "";
+      if (hint) {
+        ctx.font = "600 12px 'IBM Plex Mono', monospace"; const w = ctx.measureText(hint).width + 14;
+        const hx = Math.min(Math.max(px, w / 2 + 2), cv.width - w / 2 - 2);
+        ctx.fillStyle = C.ink; ctx.fillRect(hx - w / 2, py - 40, w, 20); ctx.strokeStyle = C.cyan; ctx.lineWidth = 1; ctx.strokeRect(hx - w / 2 + 0.5, py - 39.5, w - 1, 19);
+        ctx.fillStyle = C.chalk; ctx.fillText(hint, hx, py - 29.5);
+      }
+    }
+  }
+  function tag(ch, px, py) {
+    ctx.fillStyle = C.chalk; ctx.font = "600 9px 'IBM Plex Mono', monospace"; ctx.fillText(ch, px + TS - 5, py + 6);
+  }
+  function cone(x, y, a, fov, range, fill, edge) {
+    const n = 28; ctx.beginPath(); ctx.moveTo(x * TS, y * TS);
+    for (let i = 0; i <= n; i++) {
+      const aa = a - fov / 2 + fov * i / n, d = rayLen(x, y, aa, range);
+      ctx.lineTo((x + Math.cos(aa) * d) * TS, (y + Math.sin(aa) * d) * TS);
+    }
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = edge; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // ---------- HUD ----------
+  const money = n => "$" + n.toLocaleString("en-US");
+  function clockStr() {
+    const s = 2 * 3600 + 14 * 60 + Math.floor(S.t * 4); // 4 game-seconds per real second
+    return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(v => String(v).padStart(2, "0")).join(":");
+  }
+  function hud() {
+    $("loot").textContent = money(S.loot);
+    $("card").textContent = S.card ? "HAVE" : "—"; $("card").className = S.card ? "on" : "";
+    $("power").textContent = S.powerCut > 0 ? `CUT ${Math.ceil(S.powerCut)}s` : S.powerUsed ? "BACK ON" : "ON";
+    $("power").className = S.powerCut > 0 ? "on" : "";
+    $("clock").textContent = clockStr();
+    $("meter").firstElementChild.style.width = S.sus + "%";
+    $("meter").classList.toggle("hot", S.sus > 60);
+  }
+
+  // ---------- endings ----------
+  function bust(why) {
+    if (S.over) return; S.over = true; S.running = false;
+    if (S.safeOpen) closeSafe();
+    beep(440, 0.25, "sawtooth", 0.07); setTimeout(() => beep(330, 0.4, "sawtooth", 0.07), 260);
+    showEnd("Busted", why, [["Take left on the floor", money(S.loot)], ["Time inside", clockStr()]]);
+  }
+  function win() {
+    if (S.over) return; S.over = true; S.running = false;
+    [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => beep(f, 0.12, "triangle", 0.05), i * 110));
+    const max = 490000, pct = S.loot / max;
+    const rank = pct >= 1 ? "The whole vault. They'll make a film about this one."
+      : pct >= 0.6 ? "A professional score. Lie low for a year."
+      : pct >= 0.25 ? "Decent money. The crew grumbles about the gold you left."
+      : "Bus fare and a story nobody will believe.";
+    const clean = S.maxSus < 35 ? "Ghost (never close to spotted)" : S.maxSus < 70 ? "Noticed, never confirmed" : "Sweating bullets";
+    showEnd("Clean getaway", rank, [["Take", money(S.loot)], ["Cash bundles", `${S.bags} of 6`], ["Safe", S.gold ? "Cracked" : "Untouched"], ["Peak suspicion", Math.round(S.maxSus) + "%"], ["Style", clean], ["Out the door at", clockStr()]]);
+  }
+  function showEnd(title, text, rows) {
+    hud();
+    $("endTitle").textContent = title; $("endText").textContent = text;
+    $("tally").innerHTML = rows.map(([k, v], i) => `<span>${k}</span><span class="${i === 0 ? "big" : ""}">${v}</span>`).join("");
+    $("endUI").hidden = false; $("againBtn").focus();
+  }
+  function restart() {
+    newGame(); $("endUI").hidden = true; $("safeUI").hidden = true; $("intro").hidden = true; S.running = true;
+    toast("You're in. The manager's office is up the west corridor.");
+  }
+
+  // ---------- input ----------
+  const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", Shift: "sneak" };
+  addEventListener("keydown", e => {
+    if (S.safeOpen) {
+      const fine = e.shiftKey ? 1 : 2;
+      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") { turn(-fine); e.preventDefault(); }
+      else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") { turn(fine); e.preventDefault(); }
+      else if (e.key === " " || e.key === "e" || e.key === "E" || e.key === "Enter") { setNumber(); e.preventDefault(); }
+      else if (e.key === "Escape") closeSafe();
+      return;
+    }
+    if (e.target.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+    const k = KEYMAP[e.key];
+    if (k) { keys.add(k); e.preventDefault(); }
+    if (e.key === "e" || e.key === "E" || e.key === " ") { interact(); e.preventDefault(); }
+    if ((e.key === "r" || e.key === "R") && $("intro").hidden) restart();
+  });
+  addEventListener("keyup", e => { const k = KEYMAP[e.key]; if (k) keys.delete(k); if (e.key === "Shift") keys.delete("sneak"); });
+  addEventListener("blur", () => keys.clear());
+
+  $("startBtn").onclick = restart;
+  $("againBtn").onclick = restart;
+  $("dL").onclick = () => turn(-1); $("dR").onclick = () => turn(1);
+  $("dSet").onclick = setNumber; $("dLeave").onclick = closeSafe;
+  $("actBtn").addEventListener("pointerdown", e => { e.preventDefault(); interact(); });
+  for (const b of document.querySelectorAll(".dpad button")) {
+    const k = b.dataset.k;
+    if (k === "sneak") { b.addEventListener("pointerdown", e => { e.preventDefault(); keys.has("sneak") ? keys.delete("sneak") : keys.add("sneak"); b.style.borderColor = keys.has("sneak") ? "var(--cyan)" : ""; }); continue; }
+    b.addEventListener("pointerdown", e => { e.preventDefault(); keys.add(k); b.setPointerCapture?.(e.pointerId); });
+    for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(ev, () => keys.delete(k));
+  }
+  // drag or scroll the dial
+  const dial = $("dial"); let dragA = null;
+  const dialAng = e => { const r = dial.getBoundingClientRect(); return Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2); };
+  dial.addEventListener("pointerdown", e => { dragA = dialAng(e); dial.setPointerCapture(e.pointerId); });
+  dial.addEventListener("pointermove", e => {
+    if (dragA === null) return;
+    const a = dialAng(e), steps = Math.trunc(angDiff(a, dragA) / (Math.PI * 2 / 100));
+    if (steps) { for (let i = 0; i < Math.abs(steps); i++) turn(-Math.sign(steps)); dragA += steps * Math.PI * 2 / 100; }
+  });
+  dial.addEventListener("pointerup", () => dragA = null);
+  dial.addEventListener("wheel", e => { e.preventDefault(); turn(e.deltaY > 0 ? 1 : -1); }, { passive: false });
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (S.running && !S.over) update(dt);
+    else if (!S.running && !S.over) S.t += dt; // let the intro scene breathe
+    draw(); hud();
+    requestAnimationFrame(frame);
+  }
+  newGame();
+  requestAnimationFrame(frame);
+})();
+</script>
