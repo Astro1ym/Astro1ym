@@ -1,10 +1,10 @@
 - 👋 Hi, I’m @Astro1ym
-- 👀 I’m interested in ... filmaking
+- 👀 I’m interested in ... drones
 - 🌱 I’m currently learning ... c++
-- 💞️ I’m looking to collaborate on ... nothing
-- 📫 How to reach me ... dont
-- 😄 Pronouns: ... as/tro
-- ⚡ Fun fact: ... dont email me or call me or txt me cause il prolly ignore it
+- 💞️ I’m looking to collaborate on ... surveillance drone autonomous softwaew
+- 📫 How to reach me ... idk
+- 😄 Pronouns: ... he/him
+- ⚡ Fun fact: ... im fluent in mandarin
 
 <!---
 Astro1ym/Astro1ym is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
