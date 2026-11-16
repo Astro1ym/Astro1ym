@@ -6,13 +6,8 @@ cd "$(dirname "$0")"
 APP="Netwatch.app/Contents"
 rm -rf Netwatch.app
 mkdir -p "$APP/MacOS" "$APP/Resources"
-cp netwatch.py requirements.txt app_src/run.command "$APP/Resources/"
-
-cat > "$APP/MacOS/Netwatch" <<'SH'
-#!/bin/bash
-# The dashboard is a terminal UI, so the app just opens it in Terminal.
-open -a Terminal "$(cd "$(dirname "$0")/../Resources" && pwd)/run.command"
-SH
+cp netwatch.py dashboard.html requirements.txt "$APP/Resources/"
+cp app_src/launcher.sh "$APP/MacOS/Netwatch"
 
 cat > "$APP/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,10 +21,11 @@ cat > "$APP/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
+    <key>LSUIElement</key><true/>
     <key>LSMinimumSystemVersion</key><string>10.13</string>
 </dict>
 </plist>
 PLIST
 
-chmod +x "$APP/MacOS/Netwatch" "$APP/Resources/run.command"
+chmod +x "$APP/MacOS/Netwatch"
 echo "built Netwatch.app"

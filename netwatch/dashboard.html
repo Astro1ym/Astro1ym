@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netwatch</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f5f5f7;
+    --card: #ffffff;
+    --ink: #1d1d1f;
+    --ink-2: #6e6e73;
+    --ink-3: #a1a1a6;
+    --line: rgba(0, 0, 0, .08);
+    --track: rgba(0, 0, 0, .06);
+    --series: #2a78d6;
+    --series-fill: rgba(42, 120, 214, .14);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --good-bg: rgba(12, 163, 12, .10);
+    --critical-bg: rgba(208, 59, 59, .10);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #000000;
+      --card: #1c1c1e;
+      --ink: #f5f5f7;
+      --ink-2: #a1a1a6;
+      --ink-3: #6e6e73;
+      --line: rgba(255, 255, 255, .10);
+      --track: rgba(255, 255, 255, .08);
+      --series: #3987e5;
+      --series-fill: rgba(57, 135, 229, .20);
+      --good-bg: rgba(12, 163, 12, .16);
+      --critical-bg: rgba(208, 59, 59, .20);
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 56px; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0; flex: 1; }
+  select, button {
+    font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 14px; cursor: pointer;
+  }
+  select { padding-right: 10px; max-width: 220px; }
+  button:hover { background: var(--track); }
+
+  .card { background: var(--card); border-radius: 18px; padding: 20px 22px; box-shadow: var(--shadow); min-width: 0; }
+  .card h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0 0 14px; letter-spacing: .01em; }
+  .grid { display: grid; gap: 16px; margin-top: 16px; }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .g2 { grid-template-columns: 1.6fr 1fr; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 900px) { .g4 { grid-template-columns: repeat(2, 1fr); } .g2, .g3 { grid-template-columns: 1fr; } }
+
+  /* status hero */
+  .hero { display: flex; align-items: center; gap: 18px; }
+  .hero .icon {
+    width: 54px; height: 54px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--good-bg); color: var(--good);
+  }
+  .hero.bad .icon { background: var(--critical-bg); color: var(--critical); }
+  .hero.idle .icon { background: var(--track); color: var(--ink-2); }
+  .hero .title { font-size: 26px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
+  .hero .sub { color: var(--ink-2); margin-top: 3px; }
+
+  /* stat tiles */
+  .tile .label { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+  .tile .value { font-size: 34px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; margin-top: 6px; }
+  .tile .value small { font-size: 15px; font-weight: 600; color: var(--ink-2); letter-spacing: 0; margin-left: 3px; }
+  .tile .foot { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .tile.hot .value { color: var(--critical); }
+
+  /* chart */
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: 200px; overflow: visible; }
+  .chart text { fill: var(--ink-2); font-size: 11px; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--ink); color: var(--card);
+    font-size: 12px; padding: 5px 9px; border-radius: 8px; white-space: nowrap;
+    transform: translate(-50%, -130%); display: none;
+  }
+
+  /* protocol bars + lists */
+  .row { display: grid; grid-template-columns: 58px 1fr auto; gap: 12px; align-items: center; padding: 7px 0; }
+  .row .name { font-weight: 600; }
+  .bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; background: var(--series); min-width: 0; transition: width .4s; }
+  .row .val { color: var(--ink-2); text-align: right; min-width: 150px; }
+  .row .val b { color: var(--ink); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-3); padding: 0 0 6px; }
+  td { padding: 7px 0; border-top: 1px solid var(--line); }
+  th.r, td.r { text-align: right; }
+  td.ip { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; padding-right: 8px; }
+  td.flag { color: var(--critical); font-weight: 600; }
+  .empty { color: var(--ink-3); padding: 10px 0 2px; }
+
+  /* alerts */
+  .alert { display: flex; gap: 14px; padding: 13px 0; border-top: 1px solid var(--line); }
+  .alert:first-of-type { border-top: 0; padding-top: 2px; }
+  .alert .dot {
+    width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: var(--critical-bg); color: var(--critical); margin-top: 1px;
+  }
+  .alert.old .dot { background: var(--track); color: var(--ink-2); }
+  .alert .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .alert .kind { font-weight: 600; }
+  .alert .time { color: var(--ink-3); font-size: 13px; }
+  .alert .what { color: var(--ink-2); font-size: 14px; }
+  .alert .who { font-size: 13px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+  .alert .who span { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
+
+  footer { color: var(--ink-3); font-size: 12px; text-align: center; margin-top: 28px; }
+  .banner { background: var(--critical-bg); color: var(--critical); border-radius: 12px; padding: 10px 14px; margin-bottom: 16px; display: none; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Netwatch</h1>
+    <label for="iface" style="color:var(--ink-2);font-size:13px">Watching</label>
+    <select id="iface" aria-label="Network interface"></select>
+    <button id="quit" title="Stop monitoring and shut Netwatch down">Quit</button>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="card hero idle" id="hero">
+    <div class="icon" id="hero-icon"></div>
+    <div>
+      <div class="title" id="hero-title">Connecting…</div>
+      <div class="sub" id="hero-sub">Waiting for the monitor.</div>
+    </div>
+  </section>
+
+  <div class="grid g4">
+    <div class="card tile"><div class="label">Packets per second</div>
+      <div class="value num" id="t-pps">–</div><div class="foot num" id="t-pps-f"></div></div>
+    <div class="card tile"><div class="label">Data per second</div>
+      <div class="value num" id="t-bps">–</div><div class="foot num" id="t-bps-f"></div></div>
+    <div class="card tile"><div class="label">New connections per second</div>
+      <div class="value num" id="t-conn">–</div><div class="foot num" id="t-conn-f"></div></div>
+    <div class="card tile" id="tile-half"><div class="label">Half-open connections</div>
+      <div class="value num" id="t-half">–</div><div class="foot" id="t-half-f">started but never completed</div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h2 id="chart-title">Packets per second, last minute</h2>
+      <div class="chart" id="chart"><svg id="svg" role="img" aria-label="Packets per second over the last minute"></svg><div class="tip" id="tip"></div></div>
+    </div>
+    <div class="card">
+      <h2>By protocol</h2>
+      <div id="protos"></div>
+    </div>
+  </div>
+
+  <div class="grid g3">
+    <div class="card"><h2>Busiest senders</h2><div id="src"></div></div>
+    <div class="card"><h2>Busiest receivers</h2><div id="dst"></div></div>
+    <div class="card"><h2>Devices probing many ports</h2><div id="scan"></div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h2>Alerts</h2><div id="alerts"></div></div>
+  </div>
+
+  <footer id="foot">Passive, read-only monitoring. Only use on networks you own or are authorized to monitor.</footer>
+</div>
+
+<script>
+"use strict";
+const TOKEN = location.hash.replace(/^#t=/, "");
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+const ICON = {
+  ok: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  warn: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4L2.5 20h19L12 4z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.3" r=".6" fill="currentColor"/></svg>',
+  wait: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+};
+const KIND = {
+  SYN_FLOOD:     ["SYN flood",       "A burst of connection attempts that never finish."],
+  UDP_FLOOD:     ["UDP flood",       "An unusually high rate of UDP packets."],
+  ICMP_FLOOD:    ["Ping (ICMP) flood", "An unusually high rate of ping-type packets."],
+  HTTP_FLOOD:    ["Web request flood", "One server is getting hammered with web requests."],
+  PORT_SCAN:     ["Port scan",       "One device is probing many ports or machines."],
+  TRAFFIC_SPIKE: ["Traffic spike",   "Traffic jumped well above its normal level."],
+};
+
+const nf = new Intl.NumberFormat("en-US");
+function rate(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e4) return (n / 1e3).toFixed(1) + "k";
+  if (n >= 100) return nf.format(Math.round(n));
+  return n.toFixed(1);
+}
+function bytes(n) {
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (n >= 1024 && i < 3) { n /= 1024; i++; }
+  return [i ? n.toFixed(1) : String(Math.round(n)), u[i]];
+}
+const bytesStr = n => bytes(n).join(" ");
+const clock = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: { "X-Netwatch-Token": TOKEN, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+/* ---------- chart: one series, one axis, crosshair tooltip ---------- */
+let hist = [], hover = null;
+function drawChart() {
+  const svg = $("svg"), W = svg.clientWidth || 600, H = 200, L = 44, R = 8, T = 10, B = 22;
+  const n = hist.length, raw = Math.max(1, ...hist);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const top = [1, 2, 5, 10].map(m => m * mag).find(v => v >= raw);
+  const x = i => L + (n > 1 ? i / (n - 1) : 0) * (W - L - R);
+  const y = v => T + (1 - v / top) * (H - T - B);
+  let h = "";
+  for (const f of [0, .5, 1]) {
+    const gy = y(top * f);
+    h += `<line x1="${L}" x2="${W - R}" y1="${gy}" y2="${gy}" stroke="var(--line)"/>`;
+    h += `<text x="${L - 8}" y="${gy + 4}" text-anchor="end">${rate(top * f).replace(/\.0$/, "")}</text>`;
+  }
+  h += `<text x="${L}" y="${H - 4}">${n}s ago</text><text x="${W - R}" y="${H - 4}" text-anchor="end">now</text>`;
+  if (n > 1) {
+    const pts = hist.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" L");
+    h += `<path d="M${pts} L${x(n - 1)},${y(0)} L${x(0)},${y(0)} Z" fill="var(--series-fill)"/>`;
+    h += `<path d="M${pts}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  const tip = $("tip");
+  if (hover != null && n > 1) {
+    const i = Math.max(0, Math.min(n - 1, Math.round((hover - L) / (W - L - R) * (n - 1))));
+    h += `<line x1="${x(i)}" x2="${x(i)}" y1="${T}" y2="${y(0)}" stroke="var(--ink-3)" stroke-dasharray="3 3"/>`;
+    h += `<circle cx="${x(i)}" cy="${y(hist[i])}" r="5" fill="var(--series)" stroke="var(--card)" stroke-width="2"/>`;
+    tip.style.display = "block";
+    tip.style.left = Math.max(70, Math.min(W - 70, x(i))) + "px";
+    tip.style.top = y(hist[i]) + "px";
+    const ago = n - 1 - i;
+    tip.textContent = `${nf.format(Math.round(hist[i]))} packets/s · ${ago ? ago + "s ago" : "latest"}`;
+  } else tip.style.display = "none";
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = h;
+}
+$("chart").addEventListener("mousemove", e => { hover = e.clientX - $("svg").getBoundingClientRect().left; drawChart(); });
+$("chart").addEventListener("mouseleave", () => { hover = null; drawChart(); });
+addEventListener("resize", drawChart);
+
+/* ---------- tables ---------- */
+function talkers(node, rows) {
+  node.replaceChildren();
+  if (!rows.length) return node.append(el("div", "empty", "No traffic yet."));
+  const t = el("table"), hr = el("tr");
+  hr.append(el("th", "", "Address"), el("th", "r", "Packets/s"), el("th", "r", "Data/s"));
+  t.append(hr);
+  for (const [ip, pps, bps] of rows.slice(0, 6)) {
+    const tr = el("tr");
+    tr.append(el("td", "ip", ip), el("td", "r num", rate(pps)), el("td", "r num", bytesStr(bps)));
+    t.append(tr);
+  }
+  node.append(t);
+}
+function scanners(node, rows, cfg) {
+  node.replaceChildren();
+  const shown = rows.filter(r => r[1] > 10 || r[2] > 10).slice(0, 6);
+  if (!shown.length) return node.append(el("div", "empty", "Nothing unusual."));
+  const t = el("table"), hr = el("tr");
+  hr.append(el("th", "", "Address"), el("th", "r", "Ports"), el("th", "r", "Machines"));
+  t.append(hr);
+  for (const [ip, ports, hosts] of shown) {
+    const hot = ports > cfg.scan_ports_threshold || hosts > cfg.scan_hosts_threshold;
+    const tr = el("tr");
+    tr.append(el("td", "ip" + (hot ? " flag" : ""), ip), el("td", "r num", nf.format(ports)), el("td", "r num", nf.format(hosts)));
+    t.append(tr);
+  }
+  node.append(t);
+}
+
+/* ---------- main render ---------- */
+let ifaceFilled = false;
+function render(s) {
+  const cfg = s.config, sh = s.short, lo = s.long;
+  $("banner").style.display = s.error ? "block" : "none";
+  $("banner").textContent = s.error || "";
+
+  if (!ifaceFilled) {
+    const sel = $("iface");
+    for (const i of s.interfaces) {
+      const o = el("option", "", i.name + (i.ip ? "  ·  " + i.ip : ""));
+      o.value = i.name; sel.append(o);
+    }
+    ifaceFilled = true;
+  }
+  if (document.activeElement !== $("iface")) $("iface").value = s.iface;
+
+  // status: anything fired within one cooldown period counts as ongoing
+  const recent = s.alerts.filter(a => s.now - a.epoch < cfg.alert_cooldown + 5);
+  const hero = $("hero");
+  if (recent.length) {
+    const kinds = [...new Set(recent.map(a => (KIND[a.type] || [a.type])[0]))];
+    hero.className = "card hero bad";
+    $("hero-icon").innerHTML = ICON.warn;
+    $("hero-title").textContent = "Attention: " + kinds.join(", ");
+    $("hero-sub").textContent = recent[0].detail;
+  } else {
+    hero.className = "card hero";
+    $("hero-icon").innerHTML = ICON.ok;
+    $("hero-title").textContent = "All clear";
+    $("hero-sub").textContent = s.total_packets
+      ? `Nothing unusual on ${s.iface}. ${nf.format(s.total_packets)} packets checked.`
+      : `Listening on ${s.iface}. No packets seen yet.`;
+  }
+
+  $("t-pps").textContent = rate(sh.pps);
+  $("t-pps-f").textContent = `${rate(lo.pps)} over ${cfg.window_long}s` + (s.baseline_ready ? ` · normal ≈ ${rate(s.baseline_pps)}` : " · learning normal level…");
+  const [bv, bu] = bytes(sh.bytes_per_sec);
+  $("t-bps").replaceChildren(bv, el("small", "", bu));
+  $("t-bps-f").textContent = `${bytesStr(lo.bytes_per_sec)} over ${cfg.window_long}s`;
+  $("t-conn").textContent = rate(sh.new_conn_per_sec);
+  $("t-conn-f").textContent = `${rate(sh.established_per_sec)} completing`;
+  $("t-half").textContent = nf.format(s.half_open);
+  $("tile-half").classList.toggle("hot", s.half_open > cfg.half_open_threshold);
+
+  hist = s.pps_history; drawChart();
+
+  const protos = $("protos"); protos.replaceChildren();
+  const maxP = Math.max(1, ...Object.values(sh.proto_pps));
+  for (const [key, label] of [["TCP", "TCP"], ["UDP", "UDP"], ["ICMP", "Ping"], ["OTHER", "Other"]]) {
+    const r = el("div", "row"), bar = el("div", "bar"), fill = el("i"), val = el("div", "val num");
+    fill.style.width = (sh.proto_pps[key] / maxP * 100) + "%";
+    bar.append(fill);
+    const b = el("b", "", rate(sh.proto_pps[key]));
+    val.append(b, ` pkt/s · ${bytesStr(sh.proto_bytes_per_sec[key])}/s`);
+    r.title = `${label}: ${rate(sh.proto_pps[key])} packets/s, ${bytesStr(sh.proto_bytes_per_sec[key])}/s (last ${cfg.window_short}s)`;
+    r.append(el("div", "name", label), bar, val);
+    protos.append(r);
+  }
+
+  talkers($("src"), s.top_src); talkers($("dst"), s.top_dst); scanners($("scan"), s.scanners, cfg);
+
+  const box = $("alerts"); box.replaceChildren();
+  if (!s.alerts.length) box.append(el("div", "empty", "No alerts. Anything suspicious will be listed here."));
+  for (const a of s.alerts.slice(0, 30)) {
+    const [name, why] = KIND[a.type] || [a.type, ""];
+    const row = el("div", "alert" + (s.now - a.epoch < cfg.alert_cooldown + 5 ? "" : " old"));
+    const dot = el("div", "dot"); dot.innerHTML = ICON.warn.replace(/26/g, "17");
+    const body = el("div"), head = el("div", "head");
+    head.append(el("span", "kind", name), el("span", "time num", clock(a.epoch)));
+    body.append(head, el("div", "what", `${why} ${a.detail}.`));
+    if (a.sources.length || a.targets.length) {
+      const who = el("div", "who");
+      if (a.sources.length) who.append("From ", el("span", "", a.sources.slice(0, 3).join(", ")));
+      if (a.targets.length) who.append(a.sources.length ? "  →  to " : "To ", el("span", "", a.targets.slice(0, 2).join(", ")));
+      body.append(who);
+    }
+    row.append(dot, body); box.append(row);
+  }
+  $("foot").textContent = `Passive, read-only monitoring. Only use on networks you own or are authorized to monitor.`
+    + (s.alert_log ? `  Alerts are also saved to ${s.alert_log}.` : "");
+}
+
+let stopped = false, misses = 0;
+async function poll() {
+  if (stopped) return;
+  try { render(await api("/api/state")); misses = 0; }
+  catch (e) {
+    if (++misses >= 3) {
+      $("hero").className = "card hero idle";
+      $("hero-icon").innerHTML = ICON.wait;
+      $("hero-title").textContent = "Netwatch is not running";
+      $("hero-sub").textContent = "Open the Netwatch app again to restart monitoring.";
+    }
+  }
+  setTimeout(poll, 1000);
+}
+$("iface").addEventListener("change", async e => {
+  try { await api("/api/interface", { name: e.target.value }); }
+  catch (err) { alert("Could not switch to that interface: " + err.message); }
+  e.target.blur();
+});
+$("quit").addEventListener("click", async () => {
+  if (!confirm("Stop monitoring and quit Netwatch?")) return;
+  try { await api("/api/quit", {}); } catch (e) {}
+  stopped = true;
+  $("hero").className = "card hero idle";
+  $("hero-icon").innerHTML = ICON.wait;
+  $("hero-title").textContent = "Netwatch has stopped";
+  $("hero-sub").textContent = "You can close this tab. Open the Netwatch app to start again.";
+});
+$("hero-icon").innerHTML = ICON.wait;
+poll();
+</script>
+</body>
+</html>

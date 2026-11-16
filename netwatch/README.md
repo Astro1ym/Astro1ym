@@ -16,18 +16,21 @@ injects or replies to a packet. No scapy send function is imported or called.
 
 ## The easy way: Netwatch.app
 
-No Terminal commands needed.
+No Terminal needed.
 
-1. Double-click **Netwatch.app** (in this folder; you can drag it to Applications).
-2. A Terminal window opens. The first time, it spends about a minute setting
-   itself up (needs internet).
-3. It lists your network interfaces. Press Enter to use the default.
-4. Type your Mac login password when asked and press Enter. Nothing shows
-   while you type. The dashboard starts.
-5. Press Ctrl-C to stop.
+1. Double-click **Netwatch** (in this folder; you can drag it to Applications).
+2. The first time, it spends about a minute setting itself up (needs internet).
+   A notification tells you it is working.
+3. macOS asks for your password. That is required to watch network traffic.
+4. The dashboard opens in your browser. Pick a different network interface
+   from the **Watching** menu at the top right if you need to.
+5. Click **Quit** in the dashboard to stop monitoring. Closing the browser
+   tab alone leaves it running in the background; open the app again to get
+   the dashboard back.
 
 Alerts are saved to `Documents/Netwatch/alerts.jsonl`. To change thresholds,
-put a `config.json` (copy `netwatch.example.json`) in `Documents/Netwatch`.
+put a `config.json` (copy `netwatch.example.json`) in `Documents/Netwatch`
+and restart the app.
 
 **"Netwatch can't be opened" / "unidentified developer":** the app is not
 signed with an Apple developer certificate. Right-click the app, choose
@@ -37,8 +40,25 @@ signed with an Apple developer certificate. Right-click the app, choose
 **It asks to install "command line developer tools":** click Install. That is
 how macOS provides Python. Open Netwatch again when it finishes.
 
-The app is a thin launcher around `netwatch.py`. After editing `netwatch.py`,
-run `./build_app.sh` to rebuild it.
+**Nothing happens:** look at `~/Library/Application Support/Netwatch/netwatch.log`
+and `setup.log` in the same folder.
+
+The app is a thin launcher (`app_src/launcher.sh`) around `netwatch.py` and
+`dashboard.html`. After editing either, run `./build_app.sh` to rebuild it.
+
+### About the browser dashboard
+
+The dashboard is served on `127.0.0.1` only, so it is reachable from your own
+Mac and nowhere else. That is loopback traffic between the monitor and your
+browser; nothing is sent on the network being watched. Each launch generates a
+secret token that the page needs to read data or stop the monitor, so other
+web pages and other users on the Mac cannot control it.
+
+You can also start it by hand; it prints the dashboard link:
+
+```bash
+sudo .venv/bin/python3 netwatch.py --web -i en0
+```
 
 ## Manual install
 
@@ -207,5 +227,6 @@ One JSON object per line:
 ## Code layout
 
 `netwatch.py` is one file in seven labelled sections (config, parsing,
-metrics, detection, capture, UI, CLI) that only depend on the ones above
-them, so each can be lifted into its own module later.
+metrics, detection, capture, terminal UI, web UI, CLI) that only depend on the
+ones above them, so each can be lifted into its own module later.
+`dashboard.html` is the browser dashboard used by `--web`.

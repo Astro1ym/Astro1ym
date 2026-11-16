@@ -27,6 +27,7 @@ Layout (single file, ordered so it can be split into modules later)
     4. Detection     - the five heuristics, alert cooldown, JSONL alert log
     5. Capture       - live capture thread, pcap replay
     6. UI            - rich dashboard, plain-text mode
+    6b. Web UI       - optional local browser dashboard (--web)
     7. CLI / main
 """
 
@@ -279,8 +280,10 @@ class WindowStats:
     seconds: float = 1.0
     pps: float = 0.0
     bytes_per_sec: float = 0.0
-    proto_pps: Dict[str, float] = field(default_factory=dict)
-    proto_bytes_per_sec: Dict[str, float] = field(default_factory=dict)
+    proto_pps: Dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(PROTOS, 0.0))
+    proto_bytes_per_sec: Dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(PROTOS, 0.0))
     new_conn_per_sec: float = 0.0
     established_per_sec: float = 0.0
 
@@ -973,6 +976,200 @@ def plain_status_line(snap: Snapshot) -> str:
 
 
 # =============================================================================
+# 6b. Web UI (optional): local browser dashboard
+# =============================================================================
+# Serves dashboard.html and a small JSON API on 127.0.0.1 ONLY. This is
+# loopback traffic between this process and your own browser; nothing is sent
+# on the monitored network. Because the monitor usually runs as root, every
+# API call must carry a secret token and a localhost Host header, so a random
+# web page open in your browser cannot talk to it.
+
+class WebMonitor:
+    """Owns the capture + engine for web mode and lets the UI switch interface."""
+
+    def __init__(self, cfg: Config, bpf: Optional[str], promisc: bool) -> None:
+        self.cfg, self.bpf, self.promisc = cfg, bpf, promisc
+        self.alerts = AlertManager(cfg)
+        self.lock = threading.Lock()
+        self.stop = threading.Event()
+        self.started = time.time()
+        self.iface = ""
+        self.engine = MetricsEngine(cfg)
+        self.capture: Optional[LiveCapture] = None
+        self.snap = Snapshot()
+        self.error = ""
+        self.interfaces = [{"name": n, "ip": ip, "default": d}
+                           for n, ip, _, d in list_interfaces()]
+
+    def switch(self, iface: str) -> None:
+        """Start watching `iface`. Raises if it cannot be opened, in which case
+        the previous capture keeps running."""
+        engine = MetricsEngine(self.cfg)
+        capture = LiveCapture(iface, engine, self.bpf, self.promisc)
+        capture.open()
+        with self.lock:
+            old = self.capture
+            self.iface, self.engine, self.capture = iface, engine, capture
+            self.snap, self.error = Snapshot(), ""
+        capture.start()
+        if old:
+            old.stop()
+
+    def tick(self) -> None:
+        with self.lock:
+            engine, capture = self.engine, self.capture
+        snap = engine.snapshot(time.time())
+        self.alerts.submit(detect(snap, self.cfg))
+        with self.lock:
+            if engine is self.engine:
+                self.snap = snap
+                if capture and capture.error:
+                    self.error = f"capture stopped: {capture.error!r}"
+
+    def state(self) -> dict:
+        cfg = self.cfg
+        with self.lock:
+            d = asdict(self.snap)
+            d.update(iface=self.iface, error=self.error)
+        d.update(
+            now=time.time(), uptime=time.time() - self.started,
+            interfaces=self.interfaces,
+            alerts=[asdict(a) for a in list(self.alerts.recent)[::-1][:50]],
+            alert_count=self.alerts.count, alert_log=cfg.alert_log,
+            config={"window_short": cfg.window_short, "window_long": cfg.window_long,
+                    "half_open_threshold": cfg.half_open_threshold,
+                    "scan_ports_threshold": cfg.scan_ports_threshold,
+                    "scan_hosts_threshold": cfg.scan_hosts_threshold,
+                    "alert_cooldown": cfg.alert_cooldown})
+        return d
+
+    def shutdown(self) -> None:
+        if self.capture:
+            self.capture.stop()
+            self.capture.join(timeout=2.0)
+        self.alerts.close()
+
+
+def make_web_handler(monitor: WebMonitor, token: str, port: int, page: bytes):
+    import hmac
+    from http.server import BaseHTTPRequestHandler
+    allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args) -> None:      # keep the console quiet
+            pass
+
+        def _send(self, code: int, body: bytes, ctype: str) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _json(self, code: int, obj) -> None:
+            self._send(code, json.dumps(obj).encode(), "application/json")
+
+        def _authorized(self) -> bool:
+            if self.headers.get("Host", "") not in allowed_hosts:
+                return False
+            return hmac.compare_digest(self.headers.get("X-Netwatch-Token", ""), token)
+
+        def do_GET(self) -> None:
+            if self.headers.get("Host", "") not in allowed_hosts:
+                return self._json(403, {"error": "forbidden"})
+            if self.path in ("/", "/index.html"):
+                return self._send(200, page, "text/html; charset=utf-8")
+            if self.path == "/api/state":
+                if not self._authorized():
+                    return self._json(403, {"error": "forbidden"})
+                return self._json(200, monitor.state())
+            self._json(404, {"error": "not found"})
+
+        def do_POST(self) -> None:
+            if not self._authorized():
+                return self._json(403, {"error": "forbidden"})
+            length = min(int(self.headers.get("Content-Length") or 0), 4096)
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except ValueError:
+                return self._json(400, {"error": "bad json"})
+            if self.path == "/api/quit":
+                self._json(200, {"ok": True})
+                monitor.stop.set()
+            elif self.path == "/api/interface":
+                name = str(body.get("name", ""))
+                if name not in {i["name"] for i in monitor.interfaces}:
+                    return self._json(400, {"error": "unknown interface"})
+                try:
+                    monitor.switch(name)
+                except Exception as exc:
+                    return self._json(500, {"error": str(exc)})
+                self._json(200, {"ok": True})
+            else:
+                self._json(404, {"error": "not found"})
+
+    return Handler
+
+
+def run_web(args, cfg: Config) -> int:
+    import secrets
+    from http.server import ThreadingHTTPServer
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "dashboard.html"), "rb") as fh:
+            page = fh.read()
+    except OSError:
+        print("dashboard.html must sit next to netwatch.py for --web.", file=sys.stderr)
+        return 1
+    if args.web_token_file:
+        with open(args.web_token_file, "r", encoding="utf-8") as fh:
+            token = fh.read().strip()
+        if len(token) < 16:
+            print("web token file must hold at least 16 characters.", file=sys.stderr)
+            return 1
+    else:
+        token = secrets.token_urlsafe(24)
+
+    monitor = WebMonitor(cfg, args.bpf, promisc=not args.no_promisc)
+    iface = args.interface or default_interface()
+    try:
+        monitor.switch(iface)
+    except PermissionError:
+        print(f"Permission denied opening {iface!r}. Raw capture needs root (sudo).",
+              file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Could not open interface {iface!r}: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.web_port),
+                                     make_web_handler(monitor, token, args.web_port, page))
+    except OSError as exc:
+        print(f"Could not listen on 127.0.0.1:{args.web_port}: {exc}", file=sys.stderr)
+        monitor.shutdown()
+        return 1
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, name="web", daemon=True).start()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: monitor.stop.set())
+    print(f"{AUTH_NOTICE}\nwatching {iface}\n"
+          f"dashboard: http://127.0.0.1:{args.web_port}/#t={token}\n(Ctrl-C to stop)",
+          flush=True)
+    try:
+        while not monitor.stop.is_set():
+            monitor.tick()
+            monitor.stop.wait(1.0)
+    finally:
+        server.shutdown()
+        monitor.shutdown()
+    print(f"netwatch stopped. {monitor.alerts.count} alert(s).")
+    return 0
+
+
+# =============================================================================
 # 7. CLI / main
 # =============================================================================
 
@@ -989,6 +1186,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print the effective config as JSON and exit")
     p.add_argument("--no-dashboard", action="store_true",
                    help="plain text output (one status line per second + alerts)")
+    p.add_argument("--web", action="store_true",
+                   help="serve a browser dashboard on 127.0.0.1 instead of the terminal UI")
+    p.add_argument("--web-port", type=int, default=8787, help="port for --web")
+    p.add_argument("--web-token-file", metavar="FILE",
+                   help="read the dashboard access token from FILE (default: random)")
     p.add_argument("--pcap", metavar="FILE",
                    help="analyse a capture file instead of sniffing live (no sudo needed)")
     p.add_argument("--bpf", metavar="FILTER",
@@ -1061,10 +1263,7 @@ def run_live(args, cfg: Config) -> int:
 
     capture.start()
     use_dash = not args.no_dashboard and sys.stdout.isatty()
-    snap = Snapshot(short=WindowStats(proto_pps=dict.fromkeys(PROTOS, 0.0),
-                                      proto_bytes_per_sec=dict.fromkeys(PROTOS, 0.0)),
-                    long=WindowStats(proto_pps=dict.fromkeys(PROTOS, 0.0),
-                                     proto_bytes_per_sec=dict.fromkeys(PROTOS, 0.0)))
+    snap = Snapshot()
 
     def tick() -> List[Alert]:
         """Recompute metrics and run detectors (once per second)."""
@@ -1122,6 +1321,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_list_interfaces()
     if args.pcap:
         return run_replay(args, cfg)
+    if args.web:
+        return run_web(args, cfg)
     try:
         import rich  # noqa: F401
     except ImportError:
