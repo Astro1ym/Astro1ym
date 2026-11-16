@@ -28,8 +28,8 @@ No Terminal needed.
    tab alone leaves it running in the background; open the app again to get
    the dashboard back.
 
-Alerts are saved to `Documents/Netwatch/alerts.jsonl`. To change thresholds,
-put a `config.json` (copy `netwatch.example.json`) in `Documents/Netwatch`
+Alerts are saved to the `Netwatch` folder in your home folder (`~/Netwatch/alerts.jsonl`). To change thresholds,
+put a `config.json` (copy `netwatch.example.json`) in that same folder
 and restart the app.
 
 **"Netwatch can't be opened" / "unidentified developer":** the app is not
@@ -40,8 +40,7 @@ signed with an Apple developer certificate. Right-click the app, choose
 **It asks to install "command line developer tools":** click Install. That is
 how macOS provides Python. Open Netwatch again when it finishes.
 
-**Nothing happens:** look at `~/Library/Application Support/Netwatch/netwatch.log`
-and `setup.log` in the same folder.
+**"Netwatch could not start":** the message now includes the reason. The full log is `~/Library/Application Support/Netwatch/netwatch.log`.
 
 The app is a thin launcher (`app_src/launcher.sh`) around `netwatch.py` and
 `dashboard.html`. After editing either, run `./build_app.sh` to rebuild it.

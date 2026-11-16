@@ -6,7 +6,8 @@
 
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
 DATA="$HOME/Library/Application Support/Netwatch"     # venv, token, log
-OUT="$HOME/Documents/Netwatch"                        # alerts.jsonl, optional config.json
+OUT="$HOME/Netwatch"                                  # alerts.jsonl, optional config.json
+APPDIR="$DATA/app"                                    # private copy of the program
 VENV="$DATA/venv"
 PORT=8787
 BASE="http://127.0.0.1:$PORT"
@@ -27,7 +28,7 @@ AS
 }
 is_up() { curl -s --noproxy 127.0.0.1 --max-time 1 -o /dev/null "$BASE/"; }
 
-mkdir -p "$DATA" "$OUT"
+mkdir -p "$DATA" "$OUT" "$APPDIR"
 
 # Already running? Just bring the dashboard back.
 if is_up && [ -s "$DATA/token" ]; then
@@ -58,6 +59,16 @@ Details: $DATA/setup.log"
     fi
 fi
 
+# Run from a private copy outside the app bundle. macOS privacy protection
+# stops background processes (even as root) from reading Downloads, Documents
+# and Desktop, which is where the app usually sits.
+if ! cp "$RES/netwatch.py" "$RES/dashboard.html" "$APPDIR/" 2>"$DATA/setup.log"; then
+    dialog "Netwatch could not copy its files.
+
+$(cat "$DATA/setup.log")"
+    exit 1
+fi
+
 # Secret that lets only this browser session talk to the monitor.
 (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(24))' > "$DATA/token")
 touch "$OUT/alerts.jsonl"            # created as you, so it stays yours
@@ -66,7 +77,8 @@ CONFIG=""
 [ -f "$OUT/config.json" ] && CONFIG="$OUT/config.json"
 
 # Start the monitor as root via the standard macOS password prompt.
-if ! osascript - "$OUT" "$VENV/bin/python3" "$RES/netwatch.py" "$PORT" "$DATA/token" "$DATA/netwatch.log" "$CONFIG" <<'AS' >/dev/null 2>&1
+: > "$DATA/netwatch.log"
+if ! osascript - "$OUT" "$VENV/bin/python3" "$APPDIR/netwatch.py" "$PORT" "$DATA/token" "$DATA/netwatch.log" "$CONFIG" <<'AS' >/dev/null 2>"$DATA/start.err"
 on run argv
     set cmd to "cd " & quoted form of (item 1 of argv) & " && " & quoted form of (item 2 of argv) & " " & quoted form of (item 3 of argv) & " --web --web-port " & (item 4 of argv) & " --web-token-file " & quoted form of (item 5 of argv)
     if (item 7 of argv) is not "" then set cmd to cmd & " -c " & quoted form of (item 7 of argv)
@@ -75,17 +87,25 @@ on run argv
 end run
 AS
 then
-    exit 0      # password dialog cancelled
+    # -128 is "user cancelled" (password dialog dismissed): quit quietly.
+    grep -q -- "-128" "$DATA/start.err" && exit 0
+    dialog "Netwatch could not start.
+
+$(cat "$DATA/start.err")"
+    exit 1
 fi
 
-for _ in $(seq 1 40); do
+for _ in $(seq 1 120); do
     if is_up; then
         open "$BASE/#t=$(cat "$DATA/token")"
         exit 0
     fi
     sleep 0.5
 done
+REASON="$(tail -n 6 "$DATA/netwatch.log" 2>/dev/null)"
 dialog "Netwatch could not start.
 
-Details: $DATA/netwatch.log"
+${REASON:-The monitor produced no output.}
+
+Full log: $DATA/netwatch.log"
 exit 1
