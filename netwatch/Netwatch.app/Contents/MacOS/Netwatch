@@ -17,8 +17,7 @@ DATA="$HOME/Library/Application Support/Netwatch"     # venv, token, log
 OUT="$HOME/Netwatch"                                  # alerts.jsonl, optional config.json
 APPDIR="$DATA/app"                                    # private copy of the program
 VENV="$DATA/venv"
-PORT=8787
-BASE="http://127.0.0.1:$PORT"
+PORT="$(cat "$DATA/port" 2>/dev/null)"                # port of the last launch, if any
 
 dialog() {   # dialog "message"
     osascript - "$1" <<'AS' >/dev/null 2>&1
@@ -34,13 +33,18 @@ on run argv
 end run
 AS
 }
-is_up() { curl -s --noproxy 127.0.0.1 --max-time 1 -o /dev/null "$BASE/"; }
+# True only if OUR monitor answers on $PORT (it accepts our secret token).
+is_up() {
+    [ -n "$PORT" ] && [ -s "$DATA/token" ] || return 1
+    [ "$(curl -s --noproxy 127.0.0.1 --max-time 1 -o /dev/null -w '%{http_code}' \
+         -H "X-Netwatch-Token: $(cat "$DATA/token")" "http://127.0.0.1:$PORT/api/state")" = "200" ]
+}
 
 mkdir -p "$DATA" "$OUT" "$APPDIR"
 
 # Already running? Just bring the dashboard back.
-if is_up && [ -s "$DATA/token" ]; then
-    open "$BASE/#t=$(cat "$DATA/token")"
+if is_up; then
+    open "http://127.0.0.1:$PORT/#t=$(cat "$DATA/token")"
     exit 0
 fi
 
@@ -79,6 +83,9 @@ fi
 
 # Secret that lets only this browser session talk to the monitor.
 (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(24))' > "$DATA/token")
+# Pick a port nothing else on this Mac is using.
+PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+echo "$PORT" > "$DATA/port"
 touch "$OUT/alerts.jsonl"            # created as you, so it stays yours
 
 CONFIG=""
@@ -105,7 +112,7 @@ fi
 
 for _ in $(seq 1 120); do
     if is_up; then
-        open "$BASE/#t=$(cat "$DATA/token")"
+        open "http://127.0.0.1:$PORT/#t=$(cat "$DATA/token")"
         exit 0
     fi
     sleep 0.5
