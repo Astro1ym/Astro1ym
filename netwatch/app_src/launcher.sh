@@ -4,6 +4,14 @@
 # standard macOS dialog, starts the passive monitor in the background and
 # opens its dashboard in your browser. Quit from the dashboard's Quit button.
 
+# Hand the work to a background copy and return at once. A script has no
+# window or event loop, so if it stayed in the foreground macOS would label
+# the app "not responding" during setup and startup.
+if [ "$1" != "--bg" ]; then
+    nohup "$0" --bg >/dev/null 2>&1 &
+    exit 0
+fi
+
 RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
 DATA="$HOME/Library/Application Support/Netwatch"     # venv, token, log
 OUT="$HOME/Netwatch"                                  # alerts.jsonl, optional config.json
