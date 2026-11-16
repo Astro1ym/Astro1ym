@@ -14,7 +14,33 @@ terminal dashboard and are appended to a JSON-lines file.
 **It is read-only.** It opens a listen-only capture socket and never sends,
 injects or replies to a packet. No scapy send function is imported or called.
 
-## Install
+## The easy way: Netwatch.app
+
+No Terminal commands needed.
+
+1. Double-click **Netwatch.app** (in this folder; you can drag it to Applications).
+2. A Terminal window opens. The first time, it spends about a minute setting
+   itself up (needs internet).
+3. It lists your network interfaces. Press Enter to use the default.
+4. Type your Mac login password when asked and press Enter. Nothing shows
+   while you type. The dashboard starts.
+5. Press Ctrl-C to stop.
+
+Alerts are saved to `Documents/Netwatch/alerts.jsonl`. To change thresholds,
+put a `config.json` (copy `netwatch.example.json`) in `Documents/Netwatch`.
+
+**"Netwatch can't be opened" / "unidentified developer":** the app is not
+signed with an Apple developer certificate. Right-click the app, choose
+**Open**, then **Open** again. On newer macOS versions, go to System Settings
+> Privacy & Security, scroll down, and click **Open Anyway**. This is needed once.
+
+**It asks to install "command line developer tools":** click Install. That is
+how macOS provides Python. Open Netwatch again when it finishes.
+
+The app is a thin launcher around `netwatch.py`. After editing `netwatch.py`,
+run `./build_app.sh` to rebuild it.
+
+## Manual install
 
 Needs Python 3.8+.
 
